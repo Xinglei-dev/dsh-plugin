@@ -1,6 +1,6 @@
 # dsh-plugin
 
-DeepSeek Harness 插件集合。DeepSeek Harness（下称 DSH）是一个插件化的编码代理运行时，该仓库收集本人维护的社区插件：它们补上官方暂未提供的使用体验，按 DSH 的插件机制安装，不修改 DSH 自身的安装文件。
+DeepSeek Harness 插件集合。DeepSeek Harness（下称 DSH）是一个插件化的编码代理运行时。本仓库自行开发并维护若干 DSH 插件，用来补上官方暂未提供的功能；插件按 DSH 自身的插件机制安装，不修改 DSH 的安装文件。
 
 ## 插件
 
@@ -69,7 +69,7 @@ plugins/<包名>/
 ## 参与与反馈
 
 - 问题与建议开 [Issue](https://github.com/Xinglei-dev/dsh-plugin/issues)。
-- 官方目前不接受外部 PR，社区插件的推荐做法是给自己的仓库加上 [`dsh-plugin`](https://github.com/topics/dsh-plugin) 话题。
+- 官方目前不接受外部 PR；插件仓库可以通过 [`dsh-plugin`](https://github.com/topics/dsh-plugin) 话题提高曝光。
 
 ## 许可
 
