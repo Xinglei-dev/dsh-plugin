@@ -22,11 +22,11 @@ dsh plugin --profile web add \
   "github:Xinglei-dev/dsh-plugin#path:/plugins/<包名>"
 ```
 
-需要锁定版本时在 `#` 后写 commit，并用 `&` 连接 `path:` 片段：
+需要锁定版本时在 `#` 后写 tag 或 commit，并用 `&` 连接 `path:` 片段：
 
 ```sh
 dsh plugin --profile web add \
-  "git+https://github.com/Xinglei-dev/dsh-plugin.git#<commit>&path:/plugins/<包名>"
+  "git+https://github.com/Xinglei-dev/dsh-plugin.git#<tag>&path:/plugins/<包名>"
 ```
 
 需要注意：

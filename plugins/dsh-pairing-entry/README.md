@@ -29,11 +29,11 @@ dsh plugin --profile web add \
   "github:Xinglei-dev/dsh-plugin#path:/plugins/dsh-pairing-entry"
 ```
 
-锁定版本时在 `#` 后写 commit：
+锁定版本时在 `#` 后写 tag：
 
 ```sh
 dsh plugin --profile web add \
-  "git+https://github.com/Xinglei-dev/dsh-plugin.git#<commit>&path:/plugins/dsh-pairing-entry"
+  "git+https://github.com/Xinglei-dev/dsh-plugin.git#dsh-pairing-entry-v0.1.0&path:/plugins/dsh-pairing-entry"
 ```
 
 `path:` 片段不能省。仓库根没有 `package.json`，省略后 pnpm 会把整个仓库当成一个包。
