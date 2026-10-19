@@ -1,10 +1,10 @@
 # AGENTS.md
 
-本仓库自行开发并维护 DSH（DeepSeek Harness）插件，读者包括插件使用者、想改代码的开发者，以及后续在本仓库工作的 AI 代理。
+以下约定面向修改代码的人和在本仓库工作的 AI 代理。
 
 ## 仓库形状
 
-- 一个仓库容纳多个插件。每个插件是 `plugins/<包名>/` 下独立的 npm 包，目录名与 `package.json` 的 `name` 一致。
+- 本仓库自行开发多个插件。每个插件是 `plugins/<包名>/` 下独立的 npm 包，目录名与 `package.json` 的 `name` 一致。
 - 插件目录自带 `package.json`、`cordis.patch.yml`、`lib/`、`test/`、`docs/` 和 `README.md`，与它在 DSH profile 中安装后的形态一致。
 - 仓库根目录只放仓库级文档、许可和忽略规则，不放可发布的包。仓库根没有 `package.json`。
 - 插件之间不共享运行时依赖。需要复用的代码先各自复制，出现第三份重复时再抽包。

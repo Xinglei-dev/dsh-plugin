@@ -1,6 +1,6 @@
 # dsh-plugin
 
-DeepSeek Harness 插件集合。DeepSeek Harness（下称 DSH）是一个插件化的编码代理运行时。本仓库自行开发并维护若干 DSH 插件，用来补上官方暂未提供的功能；插件按 DSH 自身的插件机制安装，不修改 DSH 的安装文件。
+DeepSeek Harness（DSH）插件，每个插件是 `plugins/<包名>/` 下独立的 npm 包。
 
 ## 插件
 
@@ -8,17 +8,16 @@ DeepSeek Harness 插件集合。DeepSeek Harness（下称 DSH）是一个插件�
 |---|---|---|
 | [dsh-fixed-pairing-token](plugins/dsh-fixed-pairing-token/) | 设计中，尚未实现 | 用固定 token 替换 DSH Web 每次启动随机生成的启动 token，让收藏的 GUI 地址在重启后仍然可用。设计说明见 [design.md](plugins/dsh-fixed-pairing-token/docs/design.md)。 |
 
-插件尚未实现，所以下表之外没有可安装的内容。第一个插件发布后，这里会补上安装命令。
+上表中的插件尚未实现，暂时没有可安装的内容。
 
 ## 使用前提
 
-- Node.js `^22.19.0 || >=24.0.0`（与 DSH 的要求一致）。
-- 已经能用 `npx @deepseek-ai/dsh web` 启动 DSH，并知道自己的 profile 目录位于 `$DSH_HOME/profiles/<name>`，未设置 `DSH_HOME` 时为 `~/.dsh/profiles/<name>`。
-- 每个插件按 DSH 的“插件包 + profile bundle”方式安装：包内自带 `cordis.patch.yml`，安装后由 `dsh plugin` 追加到 profile 的 `dsh.profile.bundles`。
+- Node.js `^22.19.0 || >=24.0.0`。
+- 能运行 `npx @deepseek-ai/dsh web`。profile 目录位于 `$DSH_HOME/profiles/<name>`，未设置 `DSH_HOME` 时为 `~/.dsh/profiles/<name>`。
 
 ## 安装插件
 
-仓库是多个插件共用的 monorepo，每个插件是 `plugins/<包名>/` 下独立的 npm 包。安装单个插件时用 pnpm 的 git 子目录写法：
+安装单个插件用 pnpm 的 git 子目录写法：
 
 ```sh
 dsh plugin --profile web add \
@@ -34,7 +33,7 @@ dsh plugin --profile web add \
 
 需要注意：
 
-- 从仓库根直接 `add github:Xinglei-dev/dsh-plugin` 会把整个仓库当成一个包；仓库根没有 `package.json`，因此必须带 `path:` 片段。
+- 不能省略 `path:` 片段。仓库根没有 `package.json`，省略后 pnpm 会把整个仓库当成一个包安装。
 - profile 不会自动安装 peer 依赖。插件 README 列出的 DSH 包如果在该 profile 中不存在，需要一并安装或从 profile 的 bundle 层获得。
 - 安装或删除插件后重启 DSH 进程，新配置才会生效。
 
@@ -64,7 +63,7 @@ plugins/<包名>/
 
 ## 兼容性
 
-插件针对具体 DSH 版本开发，在 `package.json` 中用 `peerDependencies` 或 `engines.dsh` 声明范围；每个插件的 README 写明实测通过的版本，以及依赖的非公开接口失效时的表现。DSH 处于 `0.2.x` 预发布阶段，内部接口仍会变化，升级 DSH 后建议重跑对应插件的离线测试。
+插件针对具体 DSH 版本开发，在 `package.json` 中用 `peerDependencies` 或 `engines.dsh` 声明范围；每个插件的 README 写明实测通过的版本，以及依赖的非公开接口失效时的表现。DSH 处于 `0.2.x` 预发布阶段，内部接口仍会变化；升级 DSH 后需要重跑对应插件的离线测试。
 
 ## 参与与反馈
 
