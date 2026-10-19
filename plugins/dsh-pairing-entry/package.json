@@ -1,16 +1,18 @@
 {
-  "name": "dsh-fixed-pairing-token",
+  "name": "dsh-pairing-entry",
   "version": "0.1.0",
-  "description": "Pin the DSH Web launch token to a configured value so the browser URL stops changing on every restart",
+  "description": "Bookmarkable DSH Web entry: /entry/<key> redirects to the current launch token, and the key is set in Web Settings",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
+    "lib/client.js",
     "cordis.patch.yml",
     "README.md"
   ],
@@ -18,8 +20,8 @@
     "dsh",
     "dsh-plugin",
     "deepseek-harness",
-    "fixed-token",
-    "launch-token"
+    "launch-token",
+    "entry-page"
   ],
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
@@ -31,6 +33,9 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
     }
   },
   "peerDependencies": {

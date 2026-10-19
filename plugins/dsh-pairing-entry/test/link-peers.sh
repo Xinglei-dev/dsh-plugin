@@ -21,7 +21,7 @@ fi
 
 cd "$(dirname "$0")/.."
 mkdir -p node_modules/@deepseek-ai
-for pkg in schemastery cordis dsh-client-connection; do
+for pkg in schemastery cordis dsh-client-connection dsh-settings; do
   target="$install_modules/@deepseek-ai/$pkg"
   link="node_modules/@deepseek-ai/$pkg"
   if [ ! -d "$target" ]; then
@@ -32,4 +32,4 @@ for pkg in schemastery cordis dsh-client-connection; do
   ln -s "$target" "$link"
 done
 
-echo "link-peers: linked schemastery, cordis and dsh-client-connection from $install_modules"
+echo "link-peers: linked schemastery, cordis, dsh-client-connection and dsh-settings from $install_modules"

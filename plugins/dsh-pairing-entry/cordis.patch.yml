@@ -1,0 +1,12 @@
+# dsh-pairing-entry bundle patch: one loader entry, nothing else.
+#
+# The key belongs to the profile patch layer, not to this package, so the
+# package never carries a credential. Set it in Web Settings > Plugins >
+# Pairing entry, or write it into the profile's cordis.patch.yml by hand:
+#
+#   - id: pairing-entry
+#     config:
+#       key: '<your key>'
+- insert:
+    - id: pairing-entry
+      name: 'dsh-pairing-entry'

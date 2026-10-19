@@ -6,7 +6,7 @@ DeepSeek Harness（DSH）插件，每个插件是 `plugins/<包名>/` 下独立�
 
 | 插件 | 说明 |
 |---|---|
-| [dsh-fixed-pairing-token](plugins/dsh-fixed-pairing-token/) | 把 DSH Web 的启动 token 固定成配置值，重启后收藏的 GUI 地址仍然可用。 |
+| [dsh-pairing-entry](plugins/dsh-pairing-entry/) | 给 DSH Web 一个固定入口 `/entry/<key>`：访问它自动换取当前启动 token，收藏的地址不再随重启失效。key 在 Web 设置面板里配置。 |
 
 ## 使用前提
 
