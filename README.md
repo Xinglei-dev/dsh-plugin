@@ -63,10 +63,9 @@ plugins/<包名>/
 
 每个插件针对具体的 DSH 版本开发，适用的版本写在插件自己的 README 里。DSH 处于 `0.2.x` 预发布阶段，内部接口仍会变化；插件依赖的非公开接口一旦变化，插件会在加载阶段报错，不会继续按旧行为运行。升级 DSH 后先看插件 README 的版本范围，不兼容时升级插件。
 
-## 参与与反馈
+## 反馈
 
-- 问题与建议开 [Issue](https://github.com/Xinglei-dev/dsh-plugin/issues)。
-- 官方目前不接受外部 PR；插件仓库可以通过 [`dsh-plugin`](https://github.com/topics/dsh-plugin) 话题提高曝光。
+问题和建议提到 [Issues](https://github.com/Xinglei-dev/dsh-plugin/issues)。
 
 ## 许可
 
