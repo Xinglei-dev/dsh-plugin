@@ -1,0 +1,15 @@
+node_modules/
+*.log
+*.tgz
+*.tsbuildinfo
+
+# 本地 DSH 运行数据与密钥
+.dsh/
+.env
+.env.*
+!.env.example
+.credentials.yaml
+
+coverage/
+.npm-cache/
+.DS_Store
