@@ -51,19 +51,17 @@ dsh plugin --profile web add link:./plugins/dsh-fixed-pairing-token
 
 ```text
 plugins/<包名>/
-├── package.json          # 包名与插件目录名一致；dsh.bundle.patch 指向同目录的 cordis.patch.yml
-├── cordis.patch.yml      # 向 profile 插入一行 loader entry
+├── package.json          # 包名与目录名一致，dsh.bundle.patch 指向同目录的 cordis.patch.yml
+├── cordis.patch.yml      # 安装时向 profile 插入的 loader entry
 ├── lib/index.js          # 插件本体
-├── test/                 # 离线测试，不依赖正在运行的 DSH
-├── docs/design.md        # 实现前的设计说明；实现完成后并入 README 并删除
-└── README.md             # 安装、配置、排障与适用版本
+└── README.md             # 安装、配置、排障与适用的 DSH 版本
 ```
 
-新增插件和文档维护的约定见 [AGENTS.md](AGENTS.md)。
+仓库的开发约定见 [AGENTS.md](AGENTS.md)。
 
 ## 兼容性
 
-插件针对具体 DSH 版本开发，在 `package.json` 中用 `peerDependencies` 或 `engines.dsh` 声明范围；每个插件的 README 写明实测通过的版本，以及依赖的非公开接口失效时的表现。DSH 处于 `0.2.x` 预发布阶段，内部接口仍会变化；升级 DSH 后需要重跑对应插件的离线测试。
+每个插件针对具体的 DSH 版本开发，适用的版本写在插件自己的 README 里。DSH 处于 `0.2.x` 预发布阶段，内部接口仍会变化；插件依赖的非公开接口一旦变化，插件会在加载阶段报错，不会继续按旧行为运行。升级 DSH 后先看插件 README 的版本范围，不兼容时升级插件。
 
 ## 参与与反馈
 

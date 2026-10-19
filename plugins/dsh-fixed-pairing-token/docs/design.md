@@ -71,4 +71,4 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 - `authorizeConnect` 得到 302，指向 `./api/remote.mux`；
 - 还原 descriptor 后恢复原来的随机 token。
 
-实现时这四步会成为 `test/` 下的离线测试，另加一条“上游字段形状变化时加载报错”的用例。真实 GUI 上的端到端验证需要重启 DSH 进程，会在征得同意后进行。
+这四步将成为实现时的离线测试，另加一条“上游字段形状变化时加载报错”的用例。
