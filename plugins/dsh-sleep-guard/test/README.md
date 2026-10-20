@@ -10,7 +10,7 @@ sh test/link-peers.sh
 node --test
 ```
 
-`test/link-peers.sh` 从 `dsh` 可执行文件的安装位置找到这两个包，也可以把 `dsh` 的路径作为第一个参数传入。安装到 profile 后不需要这一步：profile 的链接包解析会把插件的导入路由到 DSH 安装目录。
+`test/link-peers.sh` 从 `dsh` 可执行文件的安装位置找到这两个包，也可以把 `dsh` 的路径作为第一个参数传入。安装到 profile 后不需要这一步：插件运行时不导入任何外部包，测试里的这两个导入由 profile 的链接包解析完成。
 
 ## 两层测试
 

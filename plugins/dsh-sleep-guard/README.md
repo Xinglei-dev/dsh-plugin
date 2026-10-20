@@ -4,9 +4,9 @@
 
 ## 背景
 
-`sleep 300; cat /tmp/test.log` 这类命令按预估时间等待，等待本身不观察任务是否已经结束。后台任务可能 5 秒前就跑完了，Agent 仍要等满 300 秒才去读日志。这些时间全部花在任务结束之后。
+`sleep 300; cat /tmp/test.log` 按预估时间等待，等待本身不观察任务是否已经结束。后台任务可能 5 秒前就跑完了，Agent 仍要等满 300 秒才去读日志。
 
-DSH 本来就提供了对应的机制：`run_in_background: true` 启动的后台任务立即返回 Job ID，`job_output(wait=true)` 在任务真正结束时返回，不再多等一秒。本插件在命令执行前拒绝固定等待，并把这条指引返回给 Agent。
+DSH 已有对应的机制：`run_in_background: true` 启动的后台任务立即返回 Job ID，`job_output(wait=true)` 在任务真正结束时返回。本插件在命令执行前拒绝固定等待，并把这条指引返回给 Agent。
 
 ## 拦截规则
 
@@ -30,13 +30,14 @@ DSH 本来就提供了对应的机制：`run_in_background: true` 启动的后�
 | `sleep 10abc` | 放行 |
 | `cd project && sleep 60` | 放行（`sleep` 不在命令开头） |
 | `bash -c 'sleep 60'` | 放行（同上） |
-| 其他工具（`read`、`grep` 等） | 放行 |
 
-不对 `s`、`m`、`h`、`d` 以外的后缀做换算，也不把时长解析成数值：这条规则的用途只是识别“在固定等待”，不是复现 `sleep` 的完整参数语法。`sleep 1` 与 `sleep 300` 一样拦截，没有阈值、白名单或开关。
+其他工具（`read`、`grep` 等）不受影响。
+
+时长只认 `s`、`m`、`h`、`d` 四种后缀，不解析成秒数：规则的用途是识别“在固定等待”，不是复现 `sleep` 的参数语法。没有阈值、白名单或开关，`sleep 1` 与 `sleep 300` 一样拦截。
 
 ## 被拦截时 Agent 看到的内容
 
-拒绝原因作为工具错误返回，Agent 能直接读到：
+拒绝原因作为工具错误返回：
 
 ```text
 Error: 已拦截：不要用 `sleep N` 固定等待任务完成。
@@ -46,7 +47,7 @@ Error: 已拦截：不要用 `sleep N` 固定等待任务完成。
 - 不要用 `sleep N; cat/grep ...` 这类「先等再读日志」的方式轮询任务。
 ```
 
-`job_output` 只对已经存在的 Job 有效，所以提示把“已有 Job ID”和“任务还没启动”分成两种情况。
+`job_output` 只对已经存在的 Job 有效，所以「已有 Job ID」和「任务还没启动」分开写。
 
 ## 安装
 
@@ -64,7 +65,7 @@ dsh plugin --profile web add \
   "git+https://github.com/Xinglei-dev/dsh-plugin.git#dsh-sleep-guard-v0.1.0&path:/plugins/dsh-sleep-guard"
 ```
 
-`path:` 片段不能省。仓库根没有 `package.json`，省略后 pnpm 会把整个仓库当成一个包。
+`path:` 片段不能省，原因见[根 README](../../README.md#安装插件)。
 
 本地开发用 `link:`：
 
@@ -76,29 +77,19 @@ dsh plugin --profile web add link:/绝对路径/dsh-plugin/plugins/dsh-sleep-gua
 
 ## 配置
 
-无需配置。插件在 `cordis.patch.yml` 里只插入一行 loader entry，没有 `config` 层可写。要停用它，在 profile 的 patch 层把该行 `disabled: true`，或直接卸载插件。
+没有配置项。要停用，在 profile 的 patch 层给 `sleep-guard` 这一行加 `disabled: true`，或直接卸载插件。
 
 ## 限制
 
 - **只看命令开头。** `cd project && sleep 60`、`bash -c 'sleep 60'`、脚本文件里的 `sleep` 都放行。识别这些位置需要解析 Shell 语法，本插件不做。
-- **不防绕过。** `sleep 30` 的等价写法（`read -t 30`、`timeout 30 true`、`perl -e 'sleep 30'`）不拦截。目标是拦住常见的那种写法，不是封堵所有等待手段。
-- **不替代长任务机制。** 插件只拒绝固定等待，不启动 Job、不改写被拒命令、不查询 Job 状态，也不把长任务自动转为后台。前台 `timeoutMs`、`run_in_background`、`job_output` 的行为完全不变。
+- **不防绕过。** `read -t 30`、`timeout 30 true`、`perl -e 'sleep 30'` 等等价写法不拦截。目标是拦住常见的写法，不是封堵所有等待手段。
+- **不替代长任务机制。** 插件只拒绝固定等待，不启动 Job、不改写被拒命令、不查询 Job 状态，也不把长任务自动转为后台。前台 `timeoutMs`、`run_in_background`、`job_output` 的行为不变。
 
 ## 支持的 DSH 版本
 
-在 DSH `0.2.1-rc.2` 上实测通过：
+在 DSH `0.2.1-rc.2` 上实测通过。`package.json` 的 `engines.dsh` 声明为 `>=0.2.1-rc.2 <0.3.0-0`。
 
-- 启用后 `sleep 30; echo done` 立即返回上述拒绝提示，没有实际等待 30 秒；
-- `echo ok` 正常执行；
-- `run_in_background: true` 起的后台 Job 正常返回 Job ID，`job_output(wait=true)` 在任务结束时返回。
-
-`package.json` 的 `engines.dsh` 声明为 `>=0.2.1-rc.2 <0.3.0-0`。插件依赖 `tools/pre-execute` 事件的 `exec.name` / `exec.arguments.command` 字段和 `{ kind: 'deny', reason }` 返回形状；这属于 DSH 内部接口，形状变化时插件需要跟进。
-
-## 实现要点
-
-- 只注册一个 `tools/pre-execute` 监听器。命中时返回 `{ kind: 'deny', reason }`，其余情况一律 `return next()`，让 waterfall 上其他监听器和 Bash 工具本身继续执行。
-- 监听器用 `prepend: true` 注册，命中时先于其他监听器作出裁决。
-- 匹配逻辑是 `lib/index.js` 里的纯函数 `shouldBlock(command)`，不读文件、不读配置、不做 I/O。
+插件读取 `tools/pre-execute` 事件里的 `exec.name` 和 `exec.arguments.command`，并返回 `{ kind: 'deny', reason }`。这些属于 DSH 内部接口：字段改名后插件读不到命令，会退回放行的旧行为，不会报错。升级 DSH 后请确认拦截仍然生效。
 
 ## 本地开发
 
