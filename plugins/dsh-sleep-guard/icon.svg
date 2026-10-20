@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Sleep guard">
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#1f2937"/>
+  <g fill="none" stroke="#e5e7eb" stroke-width="3.4" stroke-linecap="round">
+    <circle cx="32" cy="32" r="17"/>
+    <path d="M32 21.5V32l7 4.5"/>
+  </g>
+  <path d="M17 47L47 17" stroke="#f87171" stroke-width="5.2" stroke-linecap="round"/>
+</svg>

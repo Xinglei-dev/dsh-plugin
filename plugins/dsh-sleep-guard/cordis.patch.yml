@@ -1,0 +1,7 @@
+# dsh-sleep-guard bundle patch: one loader entry, nothing else.
+#
+# The rule has no configuration, so there is nothing for the profile patch layer
+# to override.
+- insert:
+    - id: sleep-guard
+      name: 'dsh-sleep-guard'

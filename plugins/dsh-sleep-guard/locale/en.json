@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Sleep guard",
+    "description": "Refuses a Bash command that opens with a fixed `sleep N` wait and points the agent at background jobs and `job_output(wait=true)` instead."
+  }
+}
