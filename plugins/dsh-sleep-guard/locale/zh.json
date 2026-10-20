@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "固定等待拦截",
+    "description": "拦截以 `sleep N` 开头的 Bash 命令，改为提示 Agent 使用后台 Job 与 `job_output(wait=true)`。"
+  }
+}
