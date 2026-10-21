@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "命令耗时",
-    "description": "在 Bash 调用结果后附上本次调用的墙钟耗时；后台 Bash 任务结束时，在 `job_output` 中附上任务总运行时长。"
+    "description": "在模型读到的 Bash 结果里追加本次调用耗时；后台 Bash 任务结束后，在 `job_output` 中显示任务总运行时长。"
   }
 }
