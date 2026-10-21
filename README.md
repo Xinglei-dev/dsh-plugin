@@ -6,6 +6,7 @@ DeepSeek Harness（DSH）插件，每个插件是 `plugins/<包名>/` 下独立�
 
 | 插件 | 说明 |
 |---|---|
+| [dsh-command-duration](plugins/dsh-command-duration/) | 在模型看到的工具返回内容里附上 Bash 调用耗时；后台 Bash 任务结束时，在 `job_output` 中显示任务总运行时长。 |
 | [dsh-pairing-entry](plugins/dsh-pairing-entry/) | 给 DSH Web 一个固定入口 `/entry/<key>`：访问它自动换取当前启动 token，收藏的地址不再随重启失效。key 在 Web 设置面板里配置。 |
 | [dsh-sleep-guard](plugins/dsh-sleep-guard/) | 拦截以 `sleep N` 开头的 Bash 命令，改为提示 Agent 用后台 Job 与 `job_output(wait=true)` 等结果。 |
 

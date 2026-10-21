@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Command duration",
+    "description": "Appends the wall-clock time of a Bash call to its result, and the total runtime of a finished background Bash job to `job_output`."
+  }
+}

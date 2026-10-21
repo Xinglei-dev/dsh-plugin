@@ -1,0 +1,7 @@
+# dsh-command-duration bundle patch: one loader entry, nothing else.
+#
+# The plugin has no configuration, so there is nothing for the profile patch
+# layer to override.
+- insert:
+    - id: command-duration
+      name: 'dsh-command-duration'
