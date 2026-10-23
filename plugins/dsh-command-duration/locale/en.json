@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Command duration",
-    "description": "Appends the duration of each Bash call to its result, and the total runtime of a finished background Bash job to `job_output`."
+    "description": "Appends the duration of each Bash call to its result, the total runtime of a finished background Bash job to `job_output`, and the whole-call duration of a PTC `run_code` call."
   }
 }

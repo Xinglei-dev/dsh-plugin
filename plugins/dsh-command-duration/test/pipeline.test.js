@@ -171,6 +171,81 @@ async function mount({ withPlugin = true } = {}) {
 }
 
 /**
+ * Mount the real ToolRuntime in PTC presentation and this plugin on one
+ * context.
+ *
+ * PTC mode is what the registry calls it: `run_code` becomes the only tool the
+ * model may name, and every other tool is reached from inside the program.
+ * The PTC runtime is a stand-in that runs the program by calling the bound
+ * tool functions, so the real registry pipeline still produces the sub-call
+ * results.
+ *
+ * @param options - whether to load the plugin.
+ * @returns the mounted context and the fake tools' call log.
+ */
+async function mountPtc({ withPlugin = true } = {}) {
+  const { Context } = cordis;
+  const { ToolRuntime } = tools;
+  const ctx = new Context();
+  ctx.provide('systemPrompt', {
+    tools: () => () => {},
+    section: () => () => {},
+    getSectionOrder: () => 0,
+  });
+  /** The program this stand-in runs; set per test. */
+  const state = { program: async () => ({ logs: [] }) };
+  ctx.provide('ptcRuntime', {
+    language: 'typescript',
+    isolation: 'process',
+    sandboxMode: undefined,
+    get executionInstructions() {
+      return '';
+    },
+    resolve: (spec) => spec,
+    run: async (spec) => await state.program(spec.bindings[0].functions),
+    release: () => {},
+  });
+  ctx.plugin(ToolRuntime, { mode: 'ptc', maxParallelSubCalls: 4 });
+  for (let attempt = 0; attempt < 1000 && ctx.tools === undefined; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+  assert.notEqual(ctx.tools, undefined, 'the tool runtime did not mount');
+  if (withPlugin) {
+    const fiber = ctx.plugin(plugin);
+    await fiber;
+  }
+
+  const calls = [];
+  ctx.tools.register({
+    name: 'bash',
+    description: 'fake bash',
+    parameters: {
+      command: { type: 'string', required: true },
+      description: { type: 'string' },
+      delayMs: { type: 'number' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: true,
+        properties: { kind: { type: 'string' }, text: { type: 'string' } },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute(args, exec) {
+      calls.push({ tool: 'bash', args });
+      // Only the model's own `run_code` call is timed; an inner call must not
+      // add a second number the model cannot see.
+      assert.notEqual(exec.parent, undefined, 'a PTC sub-call carries a parent token');
+      if (args.delayMs !== undefined) await new Promise((resolve) => setTimeout(resolve, args.delayMs));
+      return { kind: 'foreground', cwd: '/tmp', text: 'hi\n[exit code: 0]' };
+    },
+  });
+
+  return { ctx, calls, state };
+}
+
+/**
  * Dispatch one call through the real pipeline.
  * @param ctx - mounted context.
  * @param name - tool name.
@@ -342,6 +417,98 @@ describe('real ToolRuntime result pipeline', { skip }, () => {
       const result = await call(ctx, 'bash', { command: 'echo hello', description: 'say hello' });
       assert.equal(result.isError, true);
       assert.equal(textOf(result), 'not allowed');
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+});
+
+describe('real ToolRuntime in PTC presentation', { skip }, () => {
+  it('states one duration for the whole run_code call, in the text the model reads', async () => {
+    const { ctx, state } = await mountPtc();
+    try {
+      state.program = async (tools) => {
+        await tools.bash({ command: 'a', description: 'first', delayMs: 40 });
+        await tools.bash({ command: 'b', description: 'second', delayMs: 40 });
+        return { logs: ['done'] };
+      };
+      const result = await call(ctx, 'run_code', { code: 'x', description: 'run it' });
+      const text = textOf(result);
+      assert.equal(result.isError, false);
+      // The program's own output is untouched, and exactly one line is added.
+      assert.match(text, /^done\n【本次 PTC 调用耗时：[^\n]+】$/u);
+      assert.equal(text.match(/本次 PTC 调用耗时/gu).length, 1);
+      // The whole call is timed, so two 40 ms sub-calls cannot fit in a few ms.
+      const ms = Number(/本次 PTC 调用耗时：(\d+) 毫秒/u.exec(text)[1]);
+      assert.ok(ms >= 70, `expected the whole call to be timed, got ${ms} ms`);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it('never leaks an inner bash duration into the text the model reads', async () => {
+    const { ctx, state } = await mountPtc();
+    try {
+      state.program = async (tools) => {
+        const value = await tools.bash({ command: 'a', description: 'first' });
+        // The program sees the structured value, which carries no duration.
+        return { logs: [JSON.stringify(value)] };
+      };
+      const text = textOf(await call(ctx, 'run_code', { code: 'x', description: 'run it' }));
+      assert.doesNotMatch(text, /命令调用耗时/u);
+      assert.match(text, /本次 PTC 调用耗时/u);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it('states the duration for a program that prints nothing', async () => {
+    const { ctx, state } = await mountPtc();
+    try {
+      state.program = async () => ({ logs: [] });
+      const text = textOf(await call(ctx, 'run_code', { code: 'x', description: 'run it' }));
+      assert.match(text, /^\(run_code completed with no output\)\n【本次 PTC 调用耗时：[^\n]+】$/u);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it('leaves a failed run_code result without a duration', async () => {
+    const { ctx, state } = await mountPtc();
+    try {
+      state.program = async () => {
+        throw Object.assign(new Error('boom'), { name: 'Error' });
+      };
+      const result = await call(ctx, 'run_code', { code: 'x', description: 'run it' });
+      assert.equal(result.isError, true);
+      assert.doesNotMatch(textOf(result), /本次 PTC 调用耗时/u);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it('adds the line after a content-rewriting policy, as it does for bash', async () => {
+    const { ctx, state } = await mountPtc();
+    try {
+      ctx.on('tools/post-execute', async (exec, result, next) => {
+        const decision = await next();
+        if (exec.name !== 'run_code' || decision.kind !== 'accept') return decision;
+        return { kind: 'accept', content: [{ type: 'text', text: 'truncated preview' }] };
+      });
+      state.program = async () => ({ logs: ['original output'] });
+      const text = textOf(await call(ctx, 'run_code', { code: 'x', description: 'run it' }));
+      assert.match(text, /^truncated preview\n【本次 PTC 调用耗时：[^\n]+】$/u);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it('changes nothing when the plugin is not loaded', async () => {
+    const { ctx, state } = await mountPtc({ withPlugin: false });
+    try {
+      state.program = async () => ({ logs: ['done'] });
+      const text = textOf(await call(ctx, 'run_code', { code: 'x', description: 'run it' }));
+      assert.equal(text, 'done');
     } finally {
       await ctx.fiber.dispose();
     }
