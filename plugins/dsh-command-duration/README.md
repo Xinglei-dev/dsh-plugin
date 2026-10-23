@@ -1,6 +1,8 @@
 # dsh-command-duration
 
-在模型读到的工具结果里追加一行耗时：前台 Bash 命令给出这次调用等了多久，后台任务在 `job_output` 读到终态时给出任务总运行时长，PTC 模式下按一次 `run_code` 调用给出整次耗时。
+在模型读到的工具结果里追加一行耗时：前台 Bash 命令给出这次调用等了多久，后台任务在 `job_output` 读到终态时给出任务总运行时长，PTC 模式下按一次 `run_code` 调用给出整次耗时。Web 界面另外在命令运行期间显示一个实时耗时。
+
+两处输出的去向不同：追加进结果文本的那一行给模型看，Web 界面上的实时耗时只给你看。
 
 ## 背景
 
@@ -19,6 +21,23 @@
 | PTC 模式下的一次 `run_code` 调用 | `【本次 PTC 调用耗时：1.2 秒】` |
 
 耗时按量级显示：不足 1 毫秒写「不到 1 毫秒」，不足 1 秒写整数毫秒，不足 1 分钟以秒为单位保留一位小数，更长按整秒。
+
+## Web 界面实时耗时
+
+命令运行期间，Web 界面的输入框右侧显示当前耗时，每 0.1 秒刷新一次：
+
+```text
+● 命令运行中 4.2 秒
+```
+
+- 同时在跑多条 Bash 命令时合并成一行，显示条数和最早那条的耗时。
+- 命令结束后这一行消失；最终耗时仍按上表追加到结果里，两者并存。
+- 参数还没传完的调用不计入——那时模型还在输出参数，不是在等命令。
+- 只有 `bash` 工具会计时，和结果文本的处理范围一致。
+
+这一行只作用于 Web 界面，不写进会话记录，模型也读不到。终端界面与其它客户端不受影响。
+
+实时读数按量级取整：10 秒内保留一位小数，1 分钟内按整秒，更久显示分秒。
 
 追加行插在输出正文之后、状态标记之前：`[exit code: N]`、`[killed by signal: …]`、`[timed out after Nms]` 和 `job_output` 的 `[status: …]` 仍是结果的最后一行。DSH 依据这一行的位置解析退出状态，因此追加行不会改变它。stdout、stderr、Job ID 和 Job 状态都不改动。`run_code` 的结果没有这类状态标记，耗时行直接接在输出末尾。
 
@@ -54,7 +73,7 @@ dsh plugin --profile web add \
 dsh plugin --profile web add link:/绝对路径/dsh-plugin/plugins/dsh-command-duration
 ```
 
-安装或卸载插件后要重启 `dsh web` 进程，插件才会被加载。
+安装或卸载插件后要重启 `dsh web` 进程，插件才会被加载。Web 实时耗时随同一个包提供，不需要单独安装；已经打开的页面刷新一次即可看到。
 
 ## 配置
 
@@ -65,6 +84,7 @@ dsh plugin --profile web add link:/绝对路径/dsh-plugin/plugins/dsh-command-d
 - 只处理名为 `bash` 的工具，包括一次性的 `dsh-tool-bash` 和持久化的 `dsh-tool-bash-persistent`；`pwsh`、`terminal_send` 和文件工具等不受影响。
 - 后台耗时只处理 `kind` 为 `bash` 的 Job；workflow 等其他类型的 Job 在 `job_output` 里保持原样。
 - PTC 模式下按一次 `run_code` 调用计时；程序内部每次工具调用的耗时不会单独送到模型。程序本身以错误结束时（抛出异常、超时、被取消）不追加这一行。
+- Web 实时耗时只在 Web 界面里出现；`dsh` 的终端界面和 API 客户端没有这一行。
 - **不做统计，也不做判断。** 没有耗时数据库、阈值提醒、重复命令识别或执行建议。
 - **前台数值包含调用开销。** 需要纯进程计时，请在命令里自行使用 `time`。
 - **后台总时长依赖 Job 记录的时间。** 拿不到可用的开始或结束时间时省略这一行，不做估算。
@@ -73,7 +93,9 @@ dsh plugin --profile web add link:/绝对路径/dsh-plugin/plugins/dsh-command-d
 
 在 DSH `0.2.1-rc.2` 上实测通过。`package.json` 的 `engines.dsh` 声明为 `>=0.2.1-rc.2 <0.3.0-0`。
 
-插件监听 `tools/pre-execute` 和 `tools/post-execute`，读取 `exec.name`、`exec.arguments`、`result.value`，以及 `job_output` 返回的 `{ text, job }` 里的 `kind`、`status`、`startedAt`、`finishedAt`。PTC 模式另外依赖 `run_code` 这个工具名——它只在 PTC 呈现下注册，原生部署里不出现。这些属于 DSH 内部接口：形状不符时插件省略耗时行并记一条警告，不会让命令失败。升级 DSH 后请确认耗时行仍然出现。
+插件监听 `tools/pre-execute` 和 `tools/post-execute`，读取 `exec.name`、`exec.arguments`、`result.value`，以及 `job_output` 返回的 `{ text, job }` 里的 `kind`、`status`、`startedAt`、`finishedAt`。PTC 模式另外依赖 `run_code` 这个工具名——它只在 PTC 呈现下注册，原生部署里不出现。
+
+Web 实时耗时另外依赖客户端接口：`tool.call.toolview` 插槽之外的 `conversation.input.right` 插槽，以及 Chat 快照里的 `legacy.runningCalls`（运行中调用带 `phase`、`name`、`time`）。这些属于 DSH 内部接口：形状不符时插件省略耗时行或整个实时读数，不会让命令失败。升级 DSH 后请确认两者仍然出现。
 
 ## 本地开发
 

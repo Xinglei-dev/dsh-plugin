@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "命令耗时",
-    "description": "在模型读到的 Bash 结果里追加本次调用耗时；后台 Bash 任务结束后，在 `job_output` 中显示任务总运行时长；PTC 模式下按一次 `run_code` 调用显示整次耗时。"
+    "description": "在模型读到的 Bash 结果里追加本次调用耗时；后台 Bash 任务结束后，在 `job_output` 中显示任务总运行时长；PTC 模式下按一次 `run_code` 调用显示整次耗时；Web 界面在命令运行期间显示实时耗时。"
   }
 }
