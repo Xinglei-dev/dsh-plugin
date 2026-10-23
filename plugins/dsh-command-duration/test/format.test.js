@@ -7,6 +7,7 @@ import {
   callDurationLine,
   formatDuration,
   name,
+  ptcCallLine,
   withDurationLine,
 } from '../lib/index.js';
 
@@ -85,6 +86,13 @@ describe('withDurationLine', () => {
     assert.deepEqual(withDurationLine(content, 'line', exitMarker), [
       { type: 'text', text: 'first' },
       { type: 'text', text: 'second\nline\n[exit code: 0]' },
+    ]);
+  });
+
+  it('appends at the very end when the result has no status marker', () => {
+    const content = [{ type: 'text', text: '42' }];
+    assert.deepEqual(withDurationLine(content, '【本次 PTC 调用耗时：2.4 秒】', null), [
+      { type: 'text', text: '42\n【本次 PTC 调用耗时：2.4 秒】' },
     ]);
   });
 });
@@ -170,6 +178,22 @@ describe('backgroundTotalLine', () => {
   it('ignores a shape it cannot read', () => {
     assert.equal(backgroundTotalLine(undefined), undefined);
     assert.equal(backgroundTotalLine(null), undefined);
+  });
+});
+
+describe('ptcCallLine', () => {
+  it('states one PTC call as one command without a breakdown', () => {
+    assert.equal(ptcCallLine(65), '【本次 PTC 调用耗时：65 毫秒】');
+    assert.equal(ptcCallLine(2400), '【本次 PTC 调用耗时：2.4 秒】');
+  });
+
+  it('shares the same never-negative policy as every other line', () => {
+    assert.equal(ptcCallLine(-1), '【本次 PTC 调用耗时：不到 1 毫秒】');
+    assert.equal(ptcCallLine(Number.NaN), '【本次 PTC 调用耗时：不到 1 毫秒】');
+  });
+
+  it('does not claim to be a bash call duration', () => {
+    assert.doesNotMatch(ptcCallLine(10), /命令调用耗时/u);
   });
 });
 

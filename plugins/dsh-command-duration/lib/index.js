@@ -5,10 +5,10 @@
  * A tool result already says whether a command succeeded; it does not say how
  * long it took. Without that number an agent cannot tell a 20 ms check from a
  * two-minute build, and may re-run the expensive one just to read a different
- * error line. This plugin appends one short line to Bash results and to the
- * terminal read of a background Bash job.
+ * error line. This plugin appends one short line to Bash results, to the
+ * terminal read of a background Bash job, and to a PTC `run_code` call.
  *
- * Two different measurements, deliberately kept apart:
+ * Three different measurements, deliberately kept apart:
  *
  * - A foreground Bash call reports how long *this call* waited. That is wall
  *   clock around dispatch, not CPU time and not the process's own runtime
@@ -17,6 +17,13 @@
  *   the job's terminal state. The total comes from the registry's own
  *   `startedAt` / `finishedAt` fields, so a wait that timed out mid-job never
  *   turns into a fabricated total.
+ * - A PTC `run_code` call is timed like one command: its own dispatch wall
+ *   clock, covering the program and every tool call the program makes. Under
+ *   PTC a sub-call's result never enters model history — the program receives
+ *   only structured values and the model receives only the curated
+ *   `run_code` result — so an inner Bash line would be invisible to the model.
+ *   Timing the enclosing call is what puts a number in front of the model
+ *   without a per-sub-call context message.
  *
  * The plugin only appends text. It does not replace stdout/stderr, the exit
  * marker, the job id, or the `[status: ...]` line, and every failure inside
@@ -31,6 +38,7 @@
  *   `kind`, `status`, `startedAt`, and `finishedAt`.
  * - The `bash` tool's canonical output `kind`: `foreground`, `promoted`, or
  *   `background`.
+ * - The `run_code` tool's presence, which only a PTC presentation registers.
  *
  * @module dsh-command-duration
  */
@@ -50,8 +58,17 @@ const BASH_TOOL = 'bash';
 /** The tool whose terminal reads receive a background total. */
 const JOB_OUTPUT_TOOL = 'job_output';
 
+/**
+ * The one tool a PTC presentation exposes. Under `native` it is never
+ * registered, so timing it costs nothing there.
+ */
+const RUN_CODE_TOOL = 'run_code';
+
 /** Background job kind produced by the Bash tool. */
 const BASH_JOB_KIND = 'bash';
+
+/** Tools whose own dispatch wall clock is measured and reported. */
+const TIMED_TOOLS = new Set([BASH_TOOL, RUN_CODE_TOOL]);
 
 /** Statuses that mean a job has settled and its total can be computed. */
 const TERMINAL_STATUSES = new Set(['completed', 'killed', 'failed']);
@@ -96,7 +113,8 @@ export function formatDuration(milliseconds) {
  *
  * @param content - the accepted model-facing content.
  * @param line - the line to add, without a trailing newline.
- * @param endMarker - pattern matching a trailing marker that must stay last.
+ * @param endMarker - pattern matching a trailing marker that must stay last,
+ *   or `null` when the result has no such marker.
  * @returns new content with the line appended.
  */
 export function withDurationLine(content, line, endMarker) {
@@ -112,7 +130,7 @@ export function withDurationLine(content, line, endMarker) {
 
   const block = blocks[index];
   const text = block.text;
-  const marker = endMarker.exec(text);
+  const marker = endMarker === null ? null : endMarker.exec(text);
   if (marker === null) {
     const separator = text.length > 0 && !text.endsWith('\n') ? '\n' : '';
     blocks[index] = { ...block, text: `${text}${separator}${line}` };
@@ -163,6 +181,21 @@ export function callDurationLine(kind, elapsedMs) {
     return `【命令调用耗时：${duration}（前台等待，任务在后台继续运行）】`;
   }
   return `【命令调用耗时：${duration}】`;
+}
+
+/**
+ * Describe one PTC `run_code` call.
+ *
+ * The number is the whole call's wall clock: the program plus every tool call
+ * it makes. It is stated without a breakdown because the model only ever sees
+ * the curated `run_code` result — an inner per-call figure would be a number
+ * the model cannot attribute.
+ *
+ * @param elapsedMs - measured dispatch duration.
+ * @returns the line for the model.
+ */
+export function ptcCallLine(elapsedMs) {
+  return `【本次 PTC 调用耗时：${formatDuration(elapsedMs)}】`;
 }
 
 /**
@@ -230,7 +263,7 @@ export function apply(ctx) {
   ctx.on(
     'tools/pre-execute',
     (exec, next) => {
-      if (exec.name === BASH_TOOL) starts.set(exec, performance.now());
+      if (TIMED_TOOLS.has(exec.name)) starts.set(exec, performance.now());
       return next();
     },
     { prepend: true },
@@ -267,6 +300,16 @@ export function apply(ctx) {
           }
           line = callDurationLine(kind, performance.now() - started);
           endMarker = BASH_END_MARKER;
+        } else if (exec.name === RUN_CODE_TOOL) {
+          const started = starts.get(exec);
+          starts.delete(exec);
+          if (started === undefined) return decision;
+          // A failed program reports its own error text; adding a duration
+          // would read as if the expensive part had succeeded.
+          if (result.isError) return decision;
+          line = ptcCallLine(performance.now() - started);
+          // `run_code` renders plain text with no trailing status marker.
+          endMarker = null;
         } else if (exec.name === JOB_OUTPUT_TOOL) {
           if (result.isError) return decision;
           const value = result.value;
