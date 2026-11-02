@@ -1,0 +1,13 @@
+# The loader row for dsh-memorix-tools.
+#
+# This package is not itself a bundle: it carries no `dsh.bundle` metadata, so
+# `dsh plugin add` installs it as a plain dependency and nothing is composed
+# from it. That is deliberate — one package should own the Plugins-page card.
+# dsh-mcp-memorix does that, and inserts this row from its own patch.
+#
+# Copy this row into a profile patch when composing the implementation directly:
+- insert:
+    - id: memorix-tools
+      name: dsh-memorix-tools
+      config:
+        baseUrl: http://127.0.0.1:3211/mcp

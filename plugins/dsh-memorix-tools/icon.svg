@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Memorix session routing">
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#1f2937"/>
+  <g fill="none" stroke="#93c5fd" stroke-width="2.6" stroke-linecap="round">
+    <path d="M18 17h10c4 0 6 2.5 6 6v6"/>
+    <path d="M18 32h10"/>
+    <path d="M18 47h10c4 0 6-2.5 6-6v-6"/>
+  </g>
+  <g fill="#93c5fd">
+    <circle cx="15" cy="17" r="3.4"/>
+    <circle cx="15" cy="32" r="3.4"/>
+    <circle cx="15" cy="47" r="3.4"/>
+  </g>
+  <g fill="none" stroke="#e5e7eb" stroke-width="2.6">
+    <rect x="34" y="23" width="17" height="18" rx="4"/>
+  </g>
+  <path d="M39 29h7M39 35h7" stroke="#e5e7eb" stroke-width="2.2" stroke-linecap="round"/>
+</svg>
