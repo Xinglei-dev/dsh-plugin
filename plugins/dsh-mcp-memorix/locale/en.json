@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Memorix Memory",
+    "description": "Connects Memorix so the agent can search project memory, record findings, and inspect the code graph. Every call is routed by the calling session's directory, so parallel sessions can work in different projects."
+  }
+}
