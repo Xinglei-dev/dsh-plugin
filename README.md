@@ -6,6 +6,7 @@ DeepSeek Harness（DSH）插件，每个插件是 `plugins/<包名>/` 下独立�
 
 | 插件 | 说明 |
 |---|---|
+| [dsh-agents-md](plugins/dsh-agents-md/) | 在 Web 设置里编辑全局与项目级 `AGENTS.md`，展示 DSH 实际加载的指令链。 |
 | [dsh-command-duration](plugins/dsh-command-duration/) | 在模型读到的 Bash 结果里追加本次调用耗时；后台 Bash 任务结束后，在 `job_output` 中显示任务总运行时长。 |
 | [dsh-mcp-memorix](plugins/dsh-mcp-memorix/) | Memorix 的启停卡片：安装后在插件页单独成卡，卡片组合 [dsh-memorix-tools](plugins/dsh-memorix-tools/)，由它按会话路由项目。 |
 | [dsh-memorix-tools](plugins/dsh-memorix-tools/) | 实现包：以无状态方式接入 Memorix 的 MCP 工具，每次调用按当前会话的工作目录选择项目；由 dsh-mcp-memorix 组合。 |

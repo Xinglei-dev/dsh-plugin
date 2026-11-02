@@ -1,0 +1,7 @@
+# dsh-agents-md bundle patch: one loader entry, nothing else.
+#
+# The plugin has no configuration; the profile patch layer only decides whether
+# the entry is enabled.
+- insert:
+    - id: agents-md
+      name: 'dsh-agents-md'

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Agent Instructions",
+    "description": "Edit the user-global and project-level AGENTS.md files DSH loads, from Web Settings."
+  }
+}
