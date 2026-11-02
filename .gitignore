@@ -13,3 +13,8 @@ node_modules/
 coverage/
 .npm-cache/
 .DS_Store
+
+# 本地实验中的插件，暂不发布
+/plugins/dsh-prompt-zh/
+/plugins/dsh-mcp-rea/
+/plugins/dsh-mcp-xingleisearch/
