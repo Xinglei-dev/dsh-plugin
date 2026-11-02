@@ -6,8 +6,15 @@ window.__ModuleLoader__.load({
     /** Locale namespace this plugin owns. */
     const NS = 'command-duration';
 
-    /** Tools whose running call is metered, matching the Host side's own list. */
-    const METERED_TOOLS = new Set(['bash']);
+    /**
+     * Tools whose running call is metered, matching the Host side's own
+     * `TIMED_TOOLS`: `bash` for a foreground command, and `run_code` for a PTC
+     * program, which the Host also times as one whole call. The root tool call
+     * of a PTC run is `run_code` — the `bash` calls inside the program are
+     * sub-calls — so without `run_code` here the meter stays blank for every
+     * PTC run while the result text still carries a duration.
+     */
+    const METERED_TOOLS = new Set(['bash', 'run_code']);
 
     /**
      * Normalize a host timestamp into a finite number.
@@ -43,21 +50,40 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Elapsed milliseconds for one call at one browser instant.
+     * A monotonic millisecond reading, immune to the wall clock being set.
      *
-     * The Host stamps the call's start on its own clock, which need not agree
-     * with this browser's. So the reading is split in two parts: `base` is how
-     * long the call had already run when it was first seen, measured once
-     * against the browser's own clock, and `browserElapsed` is how long ago
-     * that first sighting was. Neither part needs the Host clock, so a skew
-     * cannot make the number wrong.
+     * `performance.now()` counts from page load instead of from the epoch, so
+     * an NTP correction or a manual clock change cannot make it jump — unlike
+     * `Date.now()`, which would make a 10-second command read as an hour if the
+     * clock stepped in between two ticks.
      *
-     * @param base - elapsed time at the first sighting, in milliseconds.
-     * @param browserElapsed - milliseconds since that sighting.
+     * @returns monotonically nondecreasing milliseconds.
+     */
+    function monotonicNow() {
+      return globalThis.performance?.now?.() ?? Date.now();
+    }
+
+    /**
+     * Elapsed milliseconds for one call, from the moment the browser first saw
+     * it plus how long the Host had already been running it.
+     *
+     * Both addends are durations measured by one clock each, so neither one
+     * carries a clock seam:
+     *
+     * - `hostElapsed` is what the Host reported, already a duration.
+     * - `browserElapsed` is a difference of two readings from this page's own
+     *   monotonic clock.
+     *
+     * Adding two durations is valid whatever the two clocks say about the wall
+     * time; subtracting two clocks is what breaks under a skewed clock, and
+     * this function never does that.
+     *
+     * @param hostElapsed - milliseconds the call had already run on arrival.
+     * @param browserElapsed - milliseconds this page has measured since then.
      * @returns a nonnegative duration.
      */
-    function elapsedOf(base, browserElapsed) {
-      const elapsed = base + browserElapsed;
+    function elapsedOf(hostElapsed, browserElapsed) {
+      const elapsed = hostElapsed + browserElapsed;
       return Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0;
     }
 
@@ -86,6 +112,13 @@ window.__ModuleLoader__.load({
 
     /** How often the readout redraws while a command runs, in milliseconds. */
     const TICK_MS = 100;
+
+    /**
+     * Host endpoint that answers how long one call has already been running.
+     * Must match the Host half's `RPC_CHANNEL` / `RPC_ELAPSED`.
+     */
+    const RPC_CHANNEL = '/command-duration';
+    const RPC_ELAPSED = 'elapsed';
 
     const zh = {
       label: '运行中',
@@ -130,33 +163,72 @@ window.__ModuleLoader__.load({
     /**
      * Meter one running call, or state its final duration once it settles.
      *
-     * The offset between the Host clock and this browser is measured once, on
-     * mount, so a skewed host clock cannot turn into a wrong reading.
+     * The reading is assembled from two durations, never from two clocks:
      *
-     * @param props - the metered calls and the translator.
+     * - When a call is first seen, the Host is asked how long it has already
+     *   been running. That answer is a duration.
+     * - From then on, this page measures the increment itself on its own
+     *   monotonic clock.
+     *
+     * Asking the Host matters only for the join: on a fresh page a call may be
+     * seconds old already, and starting every readout at zero would understate
+     * it. Once the join is done the Host is not consulted again, so a running
+     * readout keeps ticking even if the connection drops.
+     *
+     * @param props - the metered calls, the translator, and the elapsed reader.
      * @returns the elapsed readout.
      */
-    function LiveMeter({ calls, t }) {
-      // Held in state so a tick can advance it; seeded lazily by the first
-      // render's own reading, which the offset was measured against.
-      const [now, setNow] = react.useState(() => Date.now());
+    function LiveMeter({ calls, t, readHostElapsed }) {
+      // Ticks advance this; it is a monotonic reading, never the wall clock.
+      const [now, setNow] = react.useState(monotonicNow);
 
       const running = calls.length > 0;
-      // The readout one number can state is the longest wait in progress.
+      // The readout one number can state is the longest wait in progress. The
+      // Host stamps `time` for all calls from one clock, so comparing those
+      // values against each other is sound even though this file never
+      // subtracts them from a browser reading.
       const oldest = calls.reduce(
         (earliest, call) => (earliest === undefined || call.time < earliest.time ? call : earliest),
         undefined,
       );
 
-      // One clock reading per call, taken the first time that call is seen and
-      // kept across renders. Deriving it during render (rather than in an
-      // effect) means the very first frame already states the true elapsed
-      // time instead of flashing a zero.
+      /**
+       * Per-call baselines, kept across renders: `at` is when this page first
+       * saw the call, `hostElapsed` is what the Host reported for it.
+       * `pending` marks a call whose answer has not arrived yet.
+       */
       const bases = react.useRef(new Map());
+      // Bumped when a Host answer lands, so the meter redraws with it.
+      const [, setRevision] = react.useState(0);
+
       if (oldest !== undefined && !bases.current.has(oldest.callId)) {
-        // `now` is this render's browser reading, so the base and the
-        // reference instant are the same moment by construction.
-        bases.current.set(oldest.callId, { at: now, elapsed: Math.max(0, now - oldest.time) });
+        // Seeded during render so the first frame already shows the right
+        // number instead of flashing zero and then jumping.
+        bases.current.set(oldest.callId, { at: now, hostElapsed: 0, pending: true });
+        // The request runs after commit: `readHostElapsed` talks to the Host,
+        // and a render must stay free of side effects.
+        queueMicrotask(() => {
+          Promise.resolve()
+            .then(() => readHostElapsed?.(oldest.callId))
+            .then((hostElapsed) => {
+              const base = bases.current.get(oldest.callId);
+              // A call that ended while the request was in flight keeps the
+              // baseline it had; there is nothing left to correct.
+              if (base === undefined) return;
+              if (typeof hostElapsed === 'number' && Number.isFinite(hostElapsed) && hostElapsed > 0) {
+                base.hostElapsed = hostElapsed;
+              }
+              base.pending = false;
+              setRevision((revision) => revision + 1);
+            })
+            .catch(() => {
+              // An unreachable or unhappy Host costs accuracy at the join, not
+              // the readout: the local clock keeps the number moving.
+              const base = bases.current.get(oldest.callId);
+              if (base !== undefined) base.pending = false;
+              setRevision((revision) => revision + 1);
+            });
+        });
       }
 
       react.useEffect(() => {
@@ -166,14 +238,16 @@ window.__ModuleLoader__.load({
 
       react.useEffect(() => {
         if (!running) return;
-        const timer = setInterval(() => setNow(Date.now()), TICK_MS);
+        const timer = setInterval(() => setNow(monotonicNow()), TICK_MS);
         return () => clearInterval(timer);
       }, [running]);
 
       if (oldest === undefined) return null;
 
       const base = bases.current.get(oldest.callId);
-      const elapsed = base === undefined ? 0 : elapsedOf(base.elapsed, now - base.at);
+      // Until the Host answers, the local measurement alone is the honest
+      // number: it is a correct lower bound rather than a wrong estimate.
+      const elapsed = base === undefined ? 0 : elapsedOf(base.hostElapsed, now - base.at);
       const label = calls.length > 1 ? t('many', { count: calls.length }) : t('one');
 
       return react.createElement(
@@ -197,13 +271,32 @@ window.__ModuleLoader__.load({
     function LiveDurationSlot({ useChat, t }) {
       const runningCalls = useChat((snapshot) => snapshot.legacy.runningCalls);
       const calls = react.useMemo(() => meteredCalls(runningCalls), [runningCalls]);
+      // The Host answers a duration. A page served without that route simply
+      // measures from when it first saw the call.
+      const readHostElapsed = react.useMemo(
+        () => async (callId) => {
+          try {
+            const response = await globalThis.fetch(`${RPC_CHANNEL}/${RPC_ELAPSED}?callId=${encodeURIComponent(callId)}`, {
+              headers: { accept: 'application/json' },
+              cache: 'no-store',
+            });
+            if (!response.ok) return undefined;
+            const body = await response.json();
+            return typeof body?.elapsedMs === 'number' ? body.elapsedMs : undefined;
+          } catch {
+            // An unreachable Host costs accuracy at the join, never the readout.
+            return undefined;
+          }
+        },
+        [],
+      );
       // The slot is part of the composer row; staying out of the tree entirely
       // keeps the row's spacing identical when no command is running.
       if (calls.length === 0) return null;
-      return react.createElement(LiveMeter, { calls, t });
+      return react.createElement(LiveMeter, { calls, t, readHostElapsed });
     }
 
-    /** Services this bundle needs: slot registration and locale copy. */
+    /** Services this bundle needs: slot placement and locale copy. */
     const inject = ['slots', 'locale'];
 
     /**
@@ -220,6 +313,9 @@ window.__ModuleLoader__.load({
             order: 100,
             locale: NS,
           },
+          // The slot's `inject` is owned by the slot's owner and cannot carry a
+          // custom prop, so the service reaches the component through the
+          // closure that builds it.
           LiveDurationSlot,
         ),
       );

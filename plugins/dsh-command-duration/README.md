@@ -30,14 +30,25 @@
 ● 命令运行中 4.2 秒
 ```
 
-- 同时在跑多条 Bash 命令时合并成一行，显示条数和最早那条的耗时。
+- 同时在跑多条命令时合并成一行，显示条数和最早那条的耗时。
 - 命令结束后这一行消失；最终耗时仍按上表追加到结果里，两者并存。
 - 参数还没传完的调用不计入——那时模型还在输出参数，不是在等命令。
-- 只有 `bash` 工具会计时，和结果文本的处理范围一致。
+- 计时范围与结果文本一致：前台 `bash` 命令，以及 PTC 模式下的一次 `run_code` 调用。PTC 程序内部的 `bash` 子调用不单独显示，耗时算在整次 `run_code` 里。
 
 这一行只作用于 Web 界面，不写进会话记录，模型也读不到。终端界面与其它客户端不受影响。
 
 实时读数按量级取整：10 秒内保留一位小数，1 分钟内按整秒，更久显示分秒。
+
+### 读数怎么算的
+
+读数由两段**时长**相加，不比较两台机器的时钟：
+
+1. 页面第一次看到这条调用时，向宿主问一次「它已经跑了多久」。宿主回的是时长（毫秒），不是开始时刻。
+2. 之后每 0.1 秒，页面用自己的单调时钟累加增量。
+
+只有时长参与运算，所以宿主与浏览器的系统时钟相差多少都不影响读数；跨机器访问、容器内外时钟不同步时同样准确。命令运行期间宿主不再被询问，连接中断也照常计时。
+
+页面刷新后重新问一次，因此读数接续刷新前的进度；宿主查不到这条调用（例如服务重启过）时从 0 开始计，不报错。查询失败或没有 Web 连接时，仅退化为「从页面看到它时开始计」，读数继续跳。
 
 追加行插在输出正文之后、状态标记之前：`[exit code: N]`、`[killed by signal: …]`、`[timed out after Nms]` 和 `job_output` 的 `[status: …]` 仍是结果的最后一行。DSH 依据这一行的位置解析退出状态，因此追加行不会改变它。stdout、stderr、Job ID 和 Job 状态都不改动。`run_code` 的结果没有这类状态标记，耗时行直接接在输出末尾。
 
@@ -85,6 +96,7 @@ dsh plugin --profile web add link:/绝对路径/dsh-plugin/plugins/dsh-command-d
 - 后台耗时只处理 `kind` 为 `bash` 的 Job；workflow 等其他类型的 Job 在 `job_output` 里保持原样。
 - PTC 模式下按一次 `run_code` 调用计时；程序内部每次工具调用的耗时不会单独送到模型。程序本身以错误结束时（抛出异常、超时、被取消）不追加这一行。
 - Web 实时耗时只在 Web 界面里出现；`dsh` 的终端界面和 API 客户端没有这一行。
+- Web 实时耗时另需一个宿主查询接口，只在 Web 部署存在；该接口缺席时读数仍会显示，只是从页面看到命令时开始计。
 - **不做统计，也不做判断。** 没有耗时数据库、阈值提醒、重复命令识别或执行建议。
 - **前台数值包含调用开销。** 需要纯进程计时，请在命令里自行使用 `time`。
 - **后台总时长依赖 Job 记录的时间。** 拿不到可用的开始或结束时间时省略这一行，不做估算。
@@ -95,7 +107,7 @@ dsh plugin --profile web add link:/绝对路径/dsh-plugin/plugins/dsh-command-d
 
 插件监听 `tools/pre-execute` 和 `tools/post-execute`，读取 `exec.name`、`exec.arguments`、`result.value`，以及 `job_output` 返回的 `{ text, job }` 里的 `kind`、`status`、`startedAt`、`finishedAt`。PTC 模式另外依赖 `run_code` 这个工具名——它只在 PTC 呈现下注册，原生部署里不出现。
 
-Web 实时耗时另外依赖客户端接口：`tool.call.toolview` 插槽之外的 `conversation.input.right` 插槽，以及 Chat 快照里的 `legacy.runningCalls`（运行中调用带 `phase`、`name`、`time`）。这些属于 DSH 内部接口：形状不符时插件省略耗时行或整个实时读数，不会让命令失败。升级 DSH 后请确认两者仍然出现。
+Web 实时耗时另外依赖客户端接口：`conversation.input.right` 插槽、Chat 快照里的 `legacy.runningCalls`（运行中调用带 `phase`、`name`、`time`、`callId`），以及宿主注册的一条只读路由 `/command-duration/elapsed?callId=…`（返回 `{ "elapsedMs": 毫秒 | null }`）。这些属于 DSH 内部接口：形状不符时插件省略耗时行或整个实时读数，不会让命令失败。升级 DSH 后请确认两者仍然出现。
 
 ## 本地开发
 
