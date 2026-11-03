@@ -5,10 +5,10 @@
  * A tool result already says whether a command succeeded; it does not say how
  * long it took. Without that number an agent cannot tell a 20 ms check from a
  * two-minute build, and may re-run the expensive one just to read a different
- * error line. This plugin appends one short line to Bash results and to the
- * terminal read of a background Bash job.
+ * error line. This plugin appends one short line to Bash results, to the
+ * terminal read of a background Bash job, and to a PTC `run_code` call.
  *
- * Two different measurements, deliberately kept apart:
+ * Three different measurements, deliberately kept apart:
  *
  * - A foreground Bash call reports how long *this call* waited. That is wall
  *   clock around dispatch, not CPU time and not the process's own runtime
@@ -17,6 +17,13 @@
  *   the job's terminal state. The total comes from the registry's own
  *   `startedAt` / `finishedAt` fields, so a wait that timed out mid-job never
  *   turns into a fabricated total.
+ * - A PTC `run_code` call is timed like one command: its own dispatch wall
+ *   clock, covering the program and every tool call the program makes. Under
+ *   PTC a sub-call's result never enters model history — the program receives
+ *   only structured values and the model receives only the curated
+ *   `run_code` result — so an inner Bash line would be invisible to the model.
+ *   Timing the enclosing call is what puts a number in front of the model
+ *   without a per-sub-call context message.
  *
  * The plugin only appends text. It does not replace stdout/stderr, the exit
  * marker, the job id, or the `[status: ...]` line, and every failure inside
@@ -31,6 +38,7 @@
  *   `kind`, `status`, `startedAt`, and `finishedAt`.
  * - The `bash` tool's canonical output `kind`: `foreground`, `promoted`, or
  *   `background`.
+ * - The `run_code` tool's presence, which only a PTC presentation registers.
  *
  * @module dsh-command-duration
  */
@@ -41,8 +49,20 @@ export const name = 'command-duration';
 /**
  * Both listeners run on events the ToolRuntime service dispatches. Declaring
  * the service keeps this plugin pending until the tool registry exists.
+ *
+ * The Web route below is mounted in a child scope that declares `webServer`
+ * (see {@link apply}), so a terminal or API deployment without one still loads
+ * this plugin and still times its commands.
  */
 export const inject = ['tools'];
+
+/**
+ * RPC channel and endpoint the Web client uses to ask how long a call has
+ * already been running. One channel, one endpoint, POST-only JSON — the shape
+ * `ctx.connection.rpc` speaks.
+ */
+const RPC_CHANNEL = '/command-duration';
+const RPC_ELAPSED = 'elapsed';
 
 /** The tool whose results receive a call-duration line. */
 const BASH_TOOL = 'bash';
@@ -50,8 +70,17 @@ const BASH_TOOL = 'bash';
 /** The tool whose terminal reads receive a background total. */
 const JOB_OUTPUT_TOOL = 'job_output';
 
+/**
+ * The one tool a PTC presentation exposes. Under `native` it is never
+ * registered, so timing it costs nothing there.
+ */
+const RUN_CODE_TOOL = 'run_code';
+
 /** Background job kind produced by the Bash tool. */
 const BASH_JOB_KIND = 'bash';
+
+/** Tools whose own dispatch wall clock is measured and reported. */
+const TIMED_TOOLS = new Set([BASH_TOOL, RUN_CODE_TOOL]);
 
 /** Statuses that mean a job has settled and its total can be computed. */
 const TERMINAL_STATUSES = new Set(['completed', 'killed', 'failed']);
@@ -96,7 +125,8 @@ export function formatDuration(milliseconds) {
  *
  * @param content - the accepted model-facing content.
  * @param line - the line to add, without a trailing newline.
- * @param endMarker - pattern matching a trailing marker that must stay last.
+ * @param endMarker - pattern matching a trailing marker that must stay last,
+ *   or `null` when the result has no such marker.
  * @returns new content with the line appended.
  */
 export function withDurationLine(content, line, endMarker) {
@@ -112,7 +142,7 @@ export function withDurationLine(content, line, endMarker) {
 
   const block = blocks[index];
   const text = block.text;
-  const marker = endMarker.exec(text);
+  const marker = endMarker === null ? null : endMarker.exec(text);
   if (marker === null) {
     const separator = text.length > 0 && !text.endsWith('\n') ? '\n' : '';
     blocks[index] = { ...block, text: `${text}${separator}${line}` };
@@ -166,6 +196,21 @@ export function callDurationLine(kind, elapsedMs) {
 }
 
 /**
+ * Describe one PTC `run_code` call.
+ *
+ * The number is the whole call's wall clock: the program plus every tool call
+ * it makes. It is stated without a breakdown because the model only ever sees
+ * the curated `run_code` result — an inner per-call figure would be a number
+ * the model cannot attribute.
+ *
+ * @param elapsedMs - measured dispatch duration.
+ * @returns the line for the model.
+ */
+export function ptcCallLine(elapsedMs) {
+  return `【本次 PTC 调用耗时：${formatDuration(elapsedMs)}】`;
+}
+
+/**
  * Resolve the kind of one Bash result.
  *
  * A forced background call is recognized from its arguments as well as from
@@ -207,6 +252,17 @@ export function bashResultKind(value, args) {
 export function apply(ctx) {
   /** Wall-clock start per execution object, written by the start listener. */
   const starts = new WeakMap();
+  /**
+   * The same starts keyed by call id, so the Web client can ask how long a call
+   * it just discovered has already been running.
+   *
+   * Two indices rather than one because the two readers hold different things:
+   * `tools/post-execute` receives the execution object itself, while the client
+   * only knows the id it saw in a session event. `callId` is the same model-minted
+   * id in both places — the agent loop stamps it on the execution and on the
+   * `tool/call` event — so the id index is a faithful second view, not a guess.
+   */
+  const startsByCallId = new Map();
   /** Diagnostics already reported, so one bad shape does not flood the log. */
   const warned = new Set();
 
@@ -227,10 +283,29 @@ export function apply(ctx) {
     }
   };
 
+  /**
+   * Forget one call's start in both indices.
+   *
+   * The id index is not weak, so every recorded call must be released here or
+   * the table grows for the life of the process.
+   * @param exec - the execution whose start is being consumed.
+   */
+  const takeStart = (exec) => {
+    const started = starts.get(exec);
+    starts.delete(exec);
+    if (typeof exec.callId === 'string') startsByCallId.delete(exec.callId);
+    return started;
+  };
+
   ctx.on(
     'tools/pre-execute',
     (exec, next) => {
-      if (exec.name === BASH_TOOL) starts.set(exec, performance.now());
+      if (TIMED_TOOLS.has(exec.name)) {
+        const started = performance.now();
+        starts.set(exec, started);
+        // `exec.callId` is the id the client will see in the `tool/call` event.
+        if (typeof exec.callId === 'string') startsByCallId.set(exec.callId, started);
+      }
       return next();
     },
     { prepend: true },
@@ -241,6 +316,12 @@ export function apply(ctx) {
     async (exec, result, next) => {
       const decision = await next();
       try {
+        // The start is consumed first, before any branch can return early: the
+        // id index is a plain Map, so a call that is blocked, replaced, or
+        // annotated would otherwise leave its entry behind for the life of the
+        // process. Every path below reads this one value.
+        const started = TIMED_TOOLS.has(exec.name) ? takeStart(exec) : undefined;
+
         // A block is another policy's corrective feedback; leave it untouched.
         if (decision.kind !== 'accept') return decision;
         // A replaced value is re-rendered by the registry, so text added here
@@ -250,8 +331,6 @@ export function apply(ctx) {
         let line;
         let endMarker;
         if (exec.name === BASH_TOOL) {
-          const started = starts.get(exec);
-          starts.delete(exec);
           // No start was recorded when another policy short-circuited earlier.
           if (started === undefined) return decision;
           // A denial, cancellation, or dispatch failure is an error result:
@@ -267,6 +346,14 @@ export function apply(ctx) {
           }
           line = callDurationLine(kind, performance.now() - started);
           endMarker = BASH_END_MARKER;
+        } else if (exec.name === RUN_CODE_TOOL) {
+          if (started === undefined) return decision;
+          // A failed program reports its own error text; adding a duration
+          // would read as if the expensive part had succeeded.
+          if (result.isError) return decision;
+          line = ptcCallLine(performance.now() - started);
+          // `run_code` renders plain text with no trailing status marker.
+          endMarker = null;
         } else if (exec.name === JOB_OUTPUT_TOOL) {
           if (result.isError) return decision;
           const value = result.value;
@@ -304,4 +391,76 @@ export function apply(ctx) {
     },
     { prepend: true },
   );
+
+  /**
+   * Answer "how long has this call been running?" for the Web client.
+   *
+   * The reply is a duration in milliseconds, never a timestamp. That choice is
+   * the whole point of the endpoint: the browser holds its own clock, and a
+   * timestamp minted here would have to be subtracted from that other clock,
+   * so any disagreement between the two would land straight in the reading.
+   * A duration carries no clock of its own and can be added to two readings
+   * taken from one monotonic source.
+   *
+   * `performance.now()` is monotonic and process-relative, so both ends of the
+   * subtraction below belong to this process. A restarted Host has no record —
+   * its calls died with it — and answers `undefined` rather than inventing one.
+   *
+   * @param callId - the id the client saw in its `tool/call` event.
+   * @returns elapsed milliseconds, or `undefined` when this call is unknown.
+   */
+  const elapsedOfCall = (callId) => {
+    const started = typeof callId === 'string' ? startsByCallId.get(callId) : undefined;
+    if (started === undefined) return undefined;
+    const elapsed = performance.now() - started;
+    // A clock that went backwards reports nothing rather than a negative wait.
+    return Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : undefined;
+  };
+
+  // The Web client reaches this host over the same plain route registry the
+  // pairing-entry plugin uses: the browser half of a third-party plugin has no
+  // RPC channel of its own (`ctx.connection` is a Host service, and the client
+  // side has no `connection` service at all), so a small authenticated HTTP
+  // route is the only transport available to both halves.
+  //
+  // `webServer` and `connection` are read optionally: a terminal or API
+  // deployment has neither, and this plugin must still time its commands.
+  // Mounted in a child scope declaring `webServer`, so this fiber stays pending
+  // only where a Web server exists and never blocks a terminal deployment.
+  ctx.inject(['webServer'], (webCtx) => {
+    // Optional: only the trust fence uses it, and the route works without it.
+    const connection = webCtx.get('connection', false);
+    webCtx.effect(
+      () =>
+        webCtx.webServer.register({
+          kind: 'exact',
+          path: `${RPC_CHANNEL}/${RPC_ELAPSED}`,
+          handler: (req, res) => {
+            // Same fence as any other authenticated page request: only a
+            // trusted Host/Origin with a live peer may read a call's start.
+            if (connection !== undefined && connection.requestRejection?.(req) === 403) {
+              res.writeHead(403, { 'cache-control': 'no-store' });
+              res.end();
+              return;
+            }
+            if (req.method !== 'GET') {
+              res.writeHead(405, { allow: 'GET', 'cache-control': 'no-store' });
+              res.end();
+              return;
+            }
+            let callId;
+            try {
+              callId = new URL(req.url ?? '', 'http://dsh.invalid').searchParams.get('callId');
+            } catch {
+              callId = null;
+            }
+            const elapsedMs = typeof callId === 'string' && callId.length > 0 ? elapsedOfCall(callId) : undefined;
+            res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+            // `null` means "this Host holds no record": the caller starts at 0.
+            res.end(JSON.stringify({ elapsedMs: elapsedMs ?? null }));
+          },
+        }),
+      'command-duration: elapsed route',
+    );
+  });
 }

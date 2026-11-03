@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session-scoped Memorix tools",
+    "description": "Registers Memorix's MCP tools over a stateless connection and routes each call by the calling session's working directory, so parallel sessions can work in different projects."
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "dsh-mcp-memorix",
+  "version": "0.1.0",
+  "description": "Enable or disable Memorix access from the Plugins page; the row it composes is dsh-memorix-tools, which routes each call by the calling session's project",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "mcp",
+    "memorix",
+    "memory",
+    "session"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

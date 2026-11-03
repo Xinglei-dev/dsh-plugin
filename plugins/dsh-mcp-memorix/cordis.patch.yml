@@ -1,0 +1,11 @@
+# dsh-mcp-memorix bundle patch: one loader row, nothing else.
+#
+# The card is the toggle; the row is dsh-memorix-tools, which routes every call
+# by the calling session's working directory. The endpoint belongs to this
+# package — override the row by id in the profile patch layer when the service
+# runs somewhere else.
+- insert:
+    - id: mcp-memorix
+      name: dsh-memorix-tools
+      config:
+        baseUrl: http://127.0.0.1:3211/mcp
